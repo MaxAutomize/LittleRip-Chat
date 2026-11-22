@@ -23,23 +23,23 @@ const app=http.createServer({requestTimeout:15000,headersTimeout:10000},async(re
  if(req.method==='GET'&&assets.has(p)){const [data,type]=assets.get(p);res.writeHead(200,{'Content-Type':type+'; charset=utf-8'});return res.end(data);}
  if(req.method==='GET'&&p==='/api/answers'){
  const after=Number(u.searchParams.get('after')||0);if(!Number.isSafeInteger(after)||after<0)fail(400,'Invalid cursor.');
- return json(200,db.prepare('SELECT id,guest,answer FROM answers WHERE id>? ORDER BY id LIMIT 100').all(after));
+ return json(200,db.prepare('SELECT a.id,e.number AS guest,a.answer FROM answers a JOIN entrants e ON e.guest=a.guest WHERE a.id>? ORDER BY a.id LIMIT 100').all(after));
  }
  if(req.method!=='POST'||!['/api/join','/api/answers'].includes(p))fail(404,'Not found.');
  if(req.headers.origin!==origin)fail(403,'Origin not allowed.');
  const slot=Math.floor(Date.now()/60000);if(minute!==slot){minute=slot;joins=0;posts=0;}
  const secret=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(key+'='))?.slice(key.length+1);
- const guest=secret?.length===43&&db.prepare('SELECT id FROM guests WHERE digest=?').get(hash(secret));
+ const guest=secret?.length===43&&db.prepare('SELECT g.id,e.number FROM guests g LEFT JOIN entrants e ON e.guest=g.id WHERE g.digest=?').get(hash(secret));
  if(p==='/api/join'){
- if(guest)return json(200,{id:guest.id});if(++joins>120)fail(429,'Please try again in a minute.');
- const g=joinBoard();res.setHeader('Set-Cookie',key+'='+g.secret+'; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000'+(secure?'; Secure':''));return json(200,{id:g.id});
+ if(guest)return json(200,{id:guest.number});if(++joins>120)fail(429,'Please try again in a minute.');
+ const g=joinBoard();res.setHeader('Set-Cookie',key+'='+g.secret+'; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000'+(secure?'; Secure':''));return json(200,{id:null});
  }
  if(!guest)fail(401,'Allow cookies and refresh to get your number.');
  const b=await readBody(req);const answer=typeof b?.answer==='string'?b.answer.trim():'';
  if(!answer||answer.length>1000)fail(400,'Write an answer between 1 and 1,000 characters.');
  const now=Date.now();
  if(posts>=120||db.prepare('SELECT 1 FROM answers WHERE guest=? AND ts>?').get(guest.id,now-5000))fail(429,'Please wait a moment before posting again.');
- db.prepare('INSERT INTO answers(guest,answer,ts) VALUES (?,?,?)').run(guest.id,answer,now);posts++;json(201,{ok:true});
+ db.prepare('INSERT INTO answers(guest,answer,ts) VALUES (?,?,?)').run(guest.id,answer,now);posts++;json(201,{ok:true,id:db.prepare('SELECT number FROM entrants WHERE guest=?').get(guest.id).number});
  }catch(e){if(!res.headersSent)json(e.status||500,{error:e.status?e.message:'Server error.'});}
 });
 app.listen(Number(process.env.PORT||8817),'127.0.0.1',()=>console.log('Listening on '+app.address().port));

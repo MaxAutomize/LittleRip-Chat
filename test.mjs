@@ -11,11 +11,12 @@ test('public numbered board, separate browser identities and shared history',asy
  try{const [line]=await once(proc.stdout,'data');const base='http://127.0.0.1:'+String(line).trim().split(' ').at(-1);
  const post=(path,cookie='',body={},site=origin)=>fetch(base+'/api/'+path,{method:'POST',headers:{Cookie:cookie,Origin:site,'Content-Type':'application/json'},body:JSON.stringify(body)});
  const guest=async()=>{const r=await post('join');assert.equal(r.status,200);return {cookie:r.headers.get('set-cookie').split(';')[0],id:(await r.json()).id};};
- const a=await guest(),b=await guest();assert.notEqual(a.id,b.id);assert.equal((await (await post('join',a.cookie)).json()).id,a.id);
+ const a=await guest(),b=await guest();assert.equal(a.id,null);assert.equal(b.id,null);assert.equal((await (await post('join',a.cookie)).json()).id,a.id);
  assert.equal((await post('answers','',{answer:'test'})).status,401);
  assert.equal((await post('answers',a.cookie,{answer:'test'},'https://wrong.test')).status,403);
- for(const g of [a,b])assert.equal((await post('answers',g.cookie,{answer:'wish '+g.id})).status,201);
- const list=await (await fetch(base+'/api/answers')).json();assert.deepEqual(list.map(x=>[x.guest,x.answer]),[[a.id,'wish '+a.id],[b.id,'wish '+b.id]]);
+ assert.equal((await post('answers',a.cookie,{answer:' '})).status,400);
+ for(const [g,n] of [[b,1],[a,2]]){const r=await post('answers',g.cookie,{answer:'wish '+n});assert.equal(r.status,201);assert.equal((await r.json()).id,n);assert.equal((await (await post('join',g.cookie)).json()).id,n);}
+ const list=await (await fetch(base+'/api/answers')).json();assert.deepEqual(list.map(x=>[x.guest,x.answer]),[[1,'wish 1'],[2,'wish 2']]);
  assert.equal((await (await fetch(base+'/api/answers?after='+list[0].id)).json()).length,1);
  assert.equal((await fetch(base+'/api/messages?channel=general')).status,404);
  }finally{const stop=once(proc,'exit');proc.kill();await stop;rmSync(dir,{recursive:true,force:true});}
